@@ -33,6 +33,7 @@ import RdrName
 import Var
 import Outputable
 import SrcLoc (Located)
+import Lexer (AddAnn)
 
 import Data.Kind
 
@@ -222,6 +223,26 @@ instance Typeable p => Data (GhcPass p) where
   gunfold _ _ _ = panic "instance Data GhcPass"
   toConstr  _   = panic "instance Data GhcPass"
   dataTypeOf _  = panic "instance Data GhcPass"
+
+-- | The API Annotations are now kept in the HsSyn AST for the GhcPs
+--   phase. We do not always have API Annotations though, only for
+--   parsed code. This type captures that, and allows the
+--   representation decision to be easily revisited as it evolves.
+data AA = AA [AddAnn] -- ^ Annotations added by the Parser
+        | AANotUsed -- ^ No Annotation for generated code, e.g. from
+                    -- TH, deriving, etc.
+        deriving (Data, Show)
+
+noAnn :: AA
+noAnn = AANotUsed
+
+instance Outputable AA where
+  ppr x = text (show x)
+
+-- | Used as a data type index for the hsSyn AST
+data GhcPass (c :: Pass)
+deriving instance Eq (GhcPass c)
+deriving instance Typeable c => Data (GhcPass c)
 
 data Pass = Parsed | Renamed | Typechecked
          deriving (Data)
