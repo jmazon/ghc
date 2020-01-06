@@ -472,8 +472,8 @@ tc_pat penv (TuplePat _ pats boxity) pat_ty thing_inside
                                  -- pat_ty /= pat_ty iff coi /= IdCo
               possibly_mangled_result
                 | gopt Opt_IrrefutableTuples dflags &&
-                  isBoxed boxity      = LazyPat noAnn (noLoc unmangled_result)
-                | otherwise           = unmangled_result
+                  isBoxed boxity   = LazyPat noExtField (noLoc unmangled_result)
+                | otherwise        = unmangled_result
 
         ; pat_ty <- readExpType pat_ty
         ; ASSERT( con_arg_tys `equalLength` pats ) -- Syntactically enforced
@@ -495,7 +495,7 @@ tc_pat penv (SumPat _ pat alt arity ) pat_ty thing_inside
 
 ------------------------
 -- Data constructors
-tc_pat penv (ConPatIn con arg_pats) pat_ty thing_inside
+tc_pat penv (ConPatIn _ con arg_pats) pat_ty thing_inside
   = tcConPat penv con pat_ty arg_pats thing_inside
 
 ------------------------
@@ -786,7 +786,8 @@ tcDataConPat penv (L con_span con_name) data_con pat_ty
                     -- (see Note [Arrows and patterns])
                     (arg_pats', res) <- tcConArgs (RealDataCon data_con) arg_tys'
                                                   arg_pats penv thing_inside
-                  ; let res_pat = ConPatOut { pat_con = header,
+                  ; let res_pat = ConPatOut { pat_o_ext = noExtField,
+                                              pat_con = header,
                                               pat_tvs = [], pat_dicts = [],
                                               pat_binds = emptyTcEvBinds,
                                               pat_args = arg_pats',
@@ -820,7 +821,8 @@ tcDataConPat penv (L con_span con_name) data_con pat_ty
              <- checkConstraints skol_info ex_tvs' given $
                 tcConArgs (RealDataCon data_con) arg_tys' arg_pats penv thing_inside
 
-        ; let res_pat = ConPatOut { pat_con   = header,
+        ; let res_pat = ConPatOut { pat_o_ext = noExtField,
+                                    pat_con   = header,
                                     pat_tvs   = ex_tvs',
                                     pat_dicts = given,
                                     pat_binds = ev_binds,
@@ -871,7 +873,8 @@ tcPatSynPat penv (L con_span _) pat_syn pat_ty arg_pats thing_inside
                 tcConArgs (PatSynCon pat_syn) arg_tys' arg_pats penv thing_inside
 
         ; traceTc "checkConstraints }" (ppr ev_binds)
-        ; let res_pat = ConPatOut { pat_con   = L con_span $ PatSynCon pat_syn,
+        ; let res_pat = ConPatOut { pat_o_ext = noExtField,
+                                    pat_con   = L con_span $ PatSynCon pat_syn,
                                     pat_tvs   = ex_tvs',
                                     pat_dicts = prov_dicts',
                                     pat_binds = ev_binds,
