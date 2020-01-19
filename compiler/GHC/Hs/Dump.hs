@@ -131,11 +131,7 @@ showAstData bs ba a0 = blankLine $$ showAstData' a0
             annotation :: ApiAnn -> SDoc
             annotation anns = case ba of
              BlankApiAnnotations -> parens $ text "ApiAnn"
-             NoBlankApiAnnotations -> parens $ pp_ann anns
-               where
-                 pp_ann (ApiAnn anns)   = text "ApiAnn"
-                                       $$ showAstData' anns
-                 pp_ann (ApiAnnNotUsed) = text "ApiAnnNotUsed "
+             NoBlankApiAnnotations -> parens $ ppr anns
 
             var  :: Var -> SDoc
             var v      = braces $ text "Var: " <> ppr v
@@ -172,7 +168,10 @@ showAstData bs ba a0 = blankLine $$ showAstData' a0
                    case cast ss of
                         Just (s :: SrcSpan) ->
                           srcSpan s
-                        Nothing -> text "nnnnnnnn"
+                        Nothing -> case cast ss of
+                          Just ((SrcSpanAnn a s) :: SrcSpanAnn) ->
+                            text "SrcSpanAnn" <+> ppr a <+> srcSpan s
+                          Nothing -> text "nnnnnnnn"
                       $$ showAstData' a
 
 normalize_newlines :: String -> String

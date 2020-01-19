@@ -35,8 +35,8 @@ testOneFile libdir fileName = do
                      $ showAstData BlankSrcSpan BlankApiAnnotations
                                                          (pm_parsed_source p)
          pped    = pragmas ++ "\n" ++ pp (pm_parsed_source p)
-         anns    = pm_annotations p
-         pragmas = getPragmas anns
+         anns'   = pm_annotations p
+         pragmas = getPragmas anns'
 
          newFile = dropExtension fileName <.> "ppr" <.> takeExtension fileName
          astFile = fileName <.> "ast"
@@ -89,18 +89,17 @@ parseOneFile libdir fileName = do
          parseModule modSum
 
 getPragmas :: ApiAnns -> String
-getPragmas anns = pragmaStr
+getPragmas anns' = pragmaStr
   where
     tokComment (L _ (AnnBlockComment s)) = s
     tokComment (L _ (AnnLineComment  s)) = s
     tokComment _ = ""
 
-    comments = case Map.lookup noSrcSpan (snd anns) of
+    comments' = case Map.lookup noSrcSpan (snd anns') of
       Nothing -> []
       Just cl -> map tokComment $ sortLocated cl
-    pragmas = filter (\c -> isPrefixOf "{-#" c ) comments
+    pragmas = filter (\c -> isPrefixOf "{-#" c ) comments'
     pragmaStr = intercalate "\n" pragmas
 
 pp :: (Outputable a) => a -> String
 pp a = showPpr unsafeGlobalDynFlags a
-

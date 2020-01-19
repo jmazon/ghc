@@ -55,7 +55,7 @@ module Lexer (
    P(..), ParseResult(..), mkParserFlags, mkParserFlags', ParserFlags(..),
    appendWarning,
    appendError,
-   allocateComments,
+   allocateComments, newComments,
    MonadP(..),
    getRealSrcLoc, getPState, withThisPackage,
    failLocMsgP, srcParseFail,
@@ -2641,6 +2641,9 @@ class Monad m => MonadP m where
                 -> AnnKeywordId     -- The first two parameters are the key
                 -> SrcSpan          -- The location of the keyword itself
                 -> m ()
+  -- | Go through the @comment_q@ in @PState@ and remove all comments
+  -- that belong within the given span
+  allocateCommentsP :: SrcSpan -> m [Located AnnotationComment]
 
 appendError
   :: SrcSpan
@@ -2682,10 +2685,20 @@ instance MonadP P where
                          in b `seq` POk s b
   addAnnotation l a v = do
     addAnnotationOnly l a v
-    allocateCommentsP l
+    _ <- allocateCommentsP l
+    return ()
+  allocateCommentsP ss = P $ \s ->
+    let (comment_q', newAnns) = allocateComments ss (comment_q s) in
+      POk s {
+         comment_q = comment_q'
+       , annotations_comments = newAnns ++ (annotations_comments s)
+       } (newComments newAnns)
 
-addAnnsAt :: MonadP m => SrcSpan -> [AddApiAnn] -> m ()
-addAnnsAt l = mapM_ (\(AddApiAnn a v) -> addAnnotation l a v)
+addAnnsAt :: (MonadP m) => SrcSpan -> [AddApiAnn] -> m [Located AnnotationComment]
+addAnnsAt l anns = do
+  cs <- allocateCommentsP l
+  mapM_ (\(AddApiAnn a v) -> addAnnotation l a v) anns
+  return cs
 
 addTabWarning :: RealSrcSpan -> P ()
 addTabWarning srcspan
@@ -3211,7 +3224,10 @@ clean_pragma prag = canon_ws (map toLower (unprefix prag))
 --
 --   The usual way an 'AddApiAnn' is created is using the 'mj' ("make jump")
 --   function, and then it can be discharged using the 'ams' function.
-data AddApiAnn = AddApiAnn AnnKeywordId SrcSpan deriving (Data,Show,Eq)
+data AddApiAnn = AddApiAnn AnnKeywordId SrcSpan deriving (Data,Show,Eq,Ord)
+
+instance Outputable AddApiAnn where
+  ppr (AddApiAnn kw ss) = text "AddApiAnn" <+> ppr kw <+> ppr ss
 
 addAnnotationOnly :: SrcSpan -> AnnKeywordId -> SrcSpan -> P ()
 addAnnotationOnly l a v = P $ \s -> POk s {
@@ -3238,15 +3254,9 @@ queueComment c = P $ \s -> POk s {
   comment_q = commentToAnnotation c : comment_q s
   } ()
 
--- | Go through the @comment_q@ in @PState@ and remove all comments
--- that belong within the given span
-allocateCommentsP :: SrcSpan -> P ()
-allocateCommentsP ss = P $ \s ->
-  let (comment_q', newAnns) = allocateComments ss (comment_q s) in
-    POk s {
-       comment_q = comment_q'
-     , annotations_comments = newAnns ++ (annotations_comments s)
-     } ()
+newComments :: [(SrcSpan,[Located AnnotationComment])] -> [Located AnnotationComment]
+newComments [] = []
+newComments ((_,cs):_) = cs
 
 allocateComments
   :: SrcSpan

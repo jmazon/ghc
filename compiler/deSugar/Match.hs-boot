@@ -1,12 +1,13 @@
 module Match where
 
 import GhcPrelude
+import Name     ( Name )
 import Var      ( Id )
 import TcType   ( Type )
 import DsMonad  ( DsM, EquationInfo, MatchResult )
 import CoreSyn  ( CoreExpr )
 import GHC.Hs   ( LPat, HsMatchContext, MatchGroup, LHsExpr )
-import GHC.Hs.Extension ( GhcRn, GhcTc )
+import GHC.Hs.Extension ( GhcTc )
 
 match   :: [Id]
         -> Type
@@ -14,14 +15,14 @@ match   :: [Id]
         -> DsM MatchResult
 
 matchWrapper
-        :: HsMatchContext GhcRn
+        :: HsMatchContext Name
         -> Maybe (LHsExpr GhcTc)
         -> MatchGroup GhcTc (LHsExpr GhcTc)
         -> DsM ([Id], CoreExpr)
 
 matchSimply
         :: CoreExpr
-        -> HsMatchContext GhcRn
+        -> HsMatchContext Name
         -> LPat GhcTc
         -> CoreExpr
         -> CoreExpr
@@ -29,7 +30,7 @@ matchSimply
 
 matchSinglePatVar
         :: Id
-        -> HsMatchContext GhcRn
+        -> HsMatchContext Name
         -> LPat GhcTc
         -> Type
         -> MatchResult

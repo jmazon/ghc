@@ -430,7 +430,7 @@ rnBindLHS name_maker _ bind@(FunBind { fun_id = rdr_name })
 
 rnBindLHS name_maker _ (PatSynBind x psb@PSB{ psb_id = rdrname })
   | isTopRecNameMaker name_maker
-  = do { addLocM checkConName rdrname
+  = do { addLocM checkConName (reLoc rdrname)
        ; name <- lookupLocatedTopBndrRn rdrname   -- Should be in scope already
        ; return (PatSynBind x psb{ psb_ext = noExtField, psb_id = name }) }
 
@@ -609,7 +609,7 @@ mkScopedTvFn sigs = \n -> lookupNameEnv env n `orElse` []
   where
     env = mkHsSigEnv get_scoped_tvs sigs
 
-    get_scoped_tvs :: LSig GhcRn -> Maybe ([Located Name], [Name])
+    get_scoped_tvs :: LSig GhcRn -> Maybe ([LocatedA Name], [Name])
     -- Returns (binders, scoped tvs for those binders)
     get_scoped_tvs (L _ (ClassOpSig _ _ names sig_ty))
       = Just (names, hsScopedTvs sig_ty)
@@ -631,10 +631,14 @@ makeMiniFixityEnv :: [LFixitySig GhcPs] -> RnM MiniFixityEnv
 makeMiniFixityEnv decls = foldlM add_one_sig emptyFsEnv decls
  where
    add_one_sig env (L loc (FixitySig _ names fixity)) =
-     foldlM add_one env [ (loc,name_loc,name,fixity)
+     foldlM add_one env [ (loc,locA name_loc,name,fixity)
                         | L name_loc name <- names ]
    add_one_sig _ (L _ (XFixitySig nec)) = noExtCon nec
 
+   add_one :: FastStringEnv (Located e)
+                      -> (SrcSpan, SrcSpan, RdrName, e)
+                      -> IOEnv
+                           (Env TcGblEnv TcLclEnv) (FastStringEnv (Located e)) -- AZ temp
    add_one env (loc, name_loc, name,fixity) = do
      { -- this fixity decl is a duplicate iff
        -- the ReaderName's OccName's FastString is already in the env
@@ -737,7 +741,7 @@ rnPatSynBind sig_fn bind@(PSB { psb_id = L l name
       }
   where
     -- See Note [Renaming pattern synonym variables]
-    lookupPatSynBndr = wrapLocM lookupLocalOccRn
+    lookupPatSynBndr = wrapLocMA lookupLocalOccRn
 
     patternSynonymErr :: SDoc
     patternSynonymErr
@@ -897,7 +901,7 @@ rnMethodBindLHS :: Bool -> Name
                 -> RnM (LHsBindsLR GhcRn GhcPs)
 rnMethodBindLHS _ cls (L loc bind@(FunBind { fun_id = name })) rest
   = setSrcSpan loc $ do
-    do { sel_name <- wrapLocM (lookupInstDeclBndr cls (text "method")) name
+    do { sel_name <- wrapLocMA (lookupInstDeclBndr cls (text "method")) name
                      -- We use the selector name as the binder
        ; let bind' = bind { fun_id = sel_name, fun_ext = noExtField }
        ; return (L loc bind' `consBag` rest ) }
@@ -1071,7 +1075,7 @@ For now we simply disallow orphan COMPLETE pragmas, as the added
 complexity of supporting them properly doesn't seem worthwhile.
 -}
 
-ppr_sig_bndrs :: [Located RdrName] -> SDoc
+ppr_sig_bndrs :: [LocatedA RdrName] -> SDoc
 ppr_sig_bndrs bs = quotes (pprWithCommas ppr bs)
 
 okHsSig :: HsSigCtxt -> LSig (GhcPass a) -> Bool
@@ -1118,7 +1122,7 @@ okHsSig ctxt (L _ sig)
      (XSig nec, _) -> noExtCon nec
 
 -------------------
-findDupSigs :: [LSig GhcPs] -> [NonEmpty (Located RdrName, Sig GhcPs)]
+findDupSigs :: [LSig GhcPs] -> [NonEmpty (LocatedA RdrName, Sig GhcPs)]
 -- Check for duplicates on RdrName version,
 -- because renamed version has unboundName for
 -- not-in-scope binders, which gives bogus dup-sig errors
@@ -1162,7 +1166,7 @@ checkDupMinimalSigs sigs
 ************************************************************************
 -}
 
-rnMatchGroup :: Outputable (body GhcPs) => HsMatchContext GhcRn
+rnMatchGroup :: Outputable (body GhcPs) => HsMatchContext Name
              -> (Located (body GhcPs) -> RnM (Located (body GhcRn), FreeVars))
              -> MatchGroup GhcPs (Located (body GhcPs))
              -> RnM (MatchGroup GhcRn (Located (body GhcRn)), FreeVars)
@@ -1173,13 +1177,13 @@ rnMatchGroup ctxt rnBody (MG { mg_alts = L _ ms, mg_origin = origin })
        ; return (mkMatchGroup origin new_ms, ms_fvs) }
 rnMatchGroup _ _ (XMatchGroup nec) = noExtCon nec
 
-rnMatch :: Outputable (body GhcPs) => HsMatchContext GhcRn
+rnMatch :: Outputable (body GhcPs) => HsMatchContext Name
         -> (Located (body GhcPs) -> RnM (Located (body GhcRn), FreeVars))
         -> LMatch GhcPs (Located (body GhcPs))
         -> RnM (LMatch GhcRn (Located (body GhcRn)), FreeVars)
 rnMatch ctxt rnBody = wrapLocFstM (rnMatch' ctxt rnBody)
 
-rnMatch' :: Outputable (body GhcPs) => HsMatchContext GhcRn
+rnMatch' :: Outputable (body GhcPs) => HsMatchContext Name
          -> (Located (body GhcPs) -> RnM (Located (body GhcRn), FreeVars))
          -> Match GhcPs (Located (body GhcPs))
          -> RnM (Match GhcRn (Located (body GhcRn)), FreeVars)
@@ -1195,7 +1199,7 @@ rnMatch' ctxt rnBody (Match { m_ctxt = mf, m_pats = pats, m_grhss = grhss })
                         , m_grhss = grhss'}, grhss_fvs ) }}
 rnMatch' _ _ (XMatch nec) = noExtCon nec
 
-emptyCaseErr :: HsMatchContext GhcRn -> SDoc
+emptyCaseErr :: HsMatchContext Name -> SDoc
 emptyCaseErr ctxt = hang (text "Empty list of alternatives in" <+> pp_ctxt)
                        2 (text "Use EmptyCase to allow this")
   where
@@ -1212,7 +1216,7 @@ emptyCaseErr ctxt = hang (text "Empty list of alternatives in" <+> pp_ctxt)
 ************************************************************************
 -}
 
-rnGRHSs :: HsMatchContext GhcRn
+rnGRHSs :: HsMatchContext Name
         -> (Located (body GhcPs) -> RnM (Located (body GhcRn), FreeVars))
         -> GRHSs GhcPs (Located (body GhcPs))
         -> RnM (GRHSs GhcRn (Located (body GhcRn)), FreeVars)
@@ -1222,13 +1226,13 @@ rnGRHSs ctxt rnBody (GRHSs _ grhss (L l binds))
     return (GRHSs noExtField grhss' (L l binds'), fvGRHSs)
 rnGRHSs _ _ (XGRHSs nec) = noExtCon nec
 
-rnGRHS :: HsMatchContext GhcRn
+rnGRHS :: HsMatchContext Name
        -> (Located (body GhcPs) -> RnM (Located (body GhcRn), FreeVars))
        -> LGRHS GhcPs (Located (body GhcPs))
        -> RnM (LGRHS GhcRn (Located (body GhcRn)), FreeVars)
 rnGRHS ctxt rnBody = wrapLocFstM (rnGRHS' ctxt rnBody)
 
-rnGRHS' :: HsMatchContext GhcRn
+rnGRHS' :: HsMatchContext Name
         -> (Located (body GhcPs) -> RnM (Located (body GhcRn), FreeVars))
         -> GRHS GhcPs (Located (body GhcPs))
         -> RnM (GRHS GhcRn (Located (body GhcRn)), FreeVars)
@@ -1274,9 +1278,9 @@ rnSrcFixityDecl sig_ctxt = rn_decl
            return (FixitySig noExtField names fixity)
     rn_decl (XFixitySig nec) = noExtCon nec
 
-    lookup_one :: Located RdrName -> RnM [Located Name]
+    lookup_one :: LocatedA RdrName -> RnM [LocatedA Name]
     lookup_one (L name_loc rdr_name)
-      = setSrcSpan name_loc $
+      = setSrcSpan (locA name_loc) $
                     -- This lookup will fail if the name is not defined in the
                     -- same binding group as this fixity declaration.
         do names <- lookupLocalTcNames sig_ctxt what rdr_name
@@ -1291,13 +1295,13 @@ rnSrcFixityDecl sig_ctxt = rn_decl
 ************************************************************************
 -}
 
-dupSigDeclErr :: NonEmpty (Located RdrName, Sig GhcPs) -> RnM ()
+dupSigDeclErr :: NonEmpty (LocatedA RdrName, Sig GhcPs) -> RnM ()
 dupSigDeclErr pairs@((L loc name, sig) :| _)
-  = addErrAt loc $
+  = addErrAt (locA loc) $
     vcat [ text "Duplicate" <+> what_it_is
            <> text "s for" <+> quotes (ppr name)
          , text "at" <+> vcat (map ppr $ sort
-                                       $ map (getLoc . fst)
+                                       $ map (locA . getLoc . fst)
                                        $ toList pairs)
          ]
   where

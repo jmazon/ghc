@@ -32,8 +32,9 @@ import Name
 import RdrName
 import Var
 import Outputable
-import SrcLoc (Located)
+import SrcLoc (Located, GenLocated(..), SrcSpan, noSrcSpan)
 import Lexer (AddApiAnn)
+import ApiAnnotation
 
 import Data.Kind
 
@@ -228,26 +229,71 @@ instance Typeable p => Data (GhcPass p) where
 --   phase. We do not always have API Annotations though, only for
 --   parsed code. This type captures that, and allows the
 --   representation decision to be easily revisited as it evolves.
-data ApiAnn = ApiAnn [AddApiAnn] -- ^ Annotations added by the Parser
-            | ApiAnnNotUsed      -- ^ No Annotation for generated code,
+data ApiAnn' ann
+  = ApiAnn { anns     :: ann -- ^ Annotations added by the Parser
+           , comments :: [Located AnnotationComment]
+              -- ^ Comments enclosed in the SrcSpan of the element
+              -- this `ApiAnn'` is attached to
+           }
+  | ApiAnnNotUsed -- ^ No Annotation for generated code,
                                  -- e.g. from TH, deriving, etc.
-        deriving (Data, Show, Eq)
+        deriving (Data, Eq, Ord)
 
-noAnn :: ApiAnn
+type ApiAnn = ApiAnn' [AddApiAnn]
+type ApiAnnComments = [Located AnnotationComment]
+
+type ApiAnnCO = ApiAnn' () -- ^ Api Annotations for comments only
+
+noComments ::ApiAnnCO
+noComments = ApiAnn () []
+
+comment :: ApiAnnComments -> ApiAnnCO
+comment cs = ApiAnn () cs
+
+type LocatedA = GenLocated SrcSpanAnn
+
+data SrcSpanAnn = SrcSpanAnn { ann :: ApiAnn, locA :: SrcSpan }
+        deriving (Data, Eq, Ord)
+
+instance Outputable SrcSpanAnn where
+  ppr (SrcSpanAnn a l) = text "SrcSpanAnn" <+> ppr a <+> ppr l
+
+reAnn :: [AddApiAnn] -> ApiAnnComments -> Located a -> LocatedA a
+reAnn anns cs (L l a) = L (SrcSpanAnn (ApiAnn anns cs) l) a
+
+noLocA :: a -> LocatedA a
+noLocA = L (SrcSpanAnn ApiAnnNotUsed noSrcSpan)
+
+getLocA :: LocatedA a -> SrcSpan
+getLocA (L (SrcSpanAnn _ l) _) = l
+
+getLocAnn :: Located a  -> SrcSpanAnn
+getLocAnn (L l _) = SrcSpanAnn ApiAnnNotUsed l
+
+noAnnSrcSpan :: SrcSpan -> SrcSpanAnn
+noAnnSrcSpan l = SrcSpanAnn ApiAnnNotUsed l
+
+noSrcSpanA :: SrcSpanAnn
+noSrcSpanA = noAnnSrcSpan noSrcSpan
+
+reLoc :: LocatedA a -> Located a
+reLoc (L (SrcSpanAnn _ l) a) = L l a
+
+reLocA :: Located a -> LocatedA a
+reLocA (L l a) = (L (SrcSpanAnn ApiAnnNotUsed l) a)
+
+noAnn :: ApiAnn' a
 noAnn = ApiAnnNotUsed
 
-addAnns :: ApiAnn -> [AddApiAnn] -> ApiAnn
-addAnns (ApiAnn as1) as2 = ApiAnn (as1 ++ as2)
-addAnns ApiAnnNotUsed [] = ApiAnnNotUsed
-addAnns ApiAnnNotUsed as = ApiAnn as
+addAnns :: ApiAnn -> [AddApiAnn] -> ApiAnnComments -> ApiAnn
+addAnns (ApiAnn as1 cs) as2 cs2 = ApiAnn (as1 ++ as2) (cs ++ cs2)
+addAnns ApiAnnNotUsed [] [] = ApiAnnNotUsed
+addAnns ApiAnnNotUsed as cs = ApiAnn as cs
 
-instance Outputable ApiAnn where
-  ppr x = text (show x)
+instance (Outputable a) => Outputable (ApiAnn' a) where
+  ppr (ApiAnn a c)  = text "ApiAnn" <+> ppr a <+> ppr c
+  ppr ApiAnnNotUsed = text "ApiAnnNotUsed"
 
--- | Used as a data type index for the hsSyn AST
-data GhcPass (c :: Pass)
-deriving instance Eq (GhcPass c)
-deriving instance Typeable c => Data (GhcPass c)
 
 data Pass = Parsed | Renamed | Typechecked
          deriving (Data)

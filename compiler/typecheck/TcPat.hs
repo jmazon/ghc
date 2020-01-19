@@ -82,7 +82,7 @@ tcLetPat sig_fn no_gen pat pat_ty thing_inside
        ; tc_lpat pat pat_ty penv thing_inside }
 
 -----------------
-tcPats :: HsMatchContext GhcRn
+tcPats :: HsMatchContext Name
        -> [LPat GhcRn]            -- Patterns,
        -> [ExpSigmaType]         --   and their types
        -> TcM a                  --   and the checker for the body
@@ -104,14 +104,14 @@ tcPats ctxt pats pat_tys thing_inside
   where
     penv = PE { pe_lazy = False, pe_ctxt = LamPat ctxt, pe_orig = PatOrigin }
 
-tcPat :: HsMatchContext GhcRn
+tcPat :: HsMatchContext Name
       -> LPat GhcRn -> ExpSigmaType
       -> TcM a                     -- Checker for body
       -> TcM (LPat GhcTcId, a)
 tcPat ctxt = tcPat_O ctxt PatOrigin
 
 -- | A variant of 'tcPat' that takes a custom origin
-tcPat_O :: HsMatchContext GhcRn
+tcPat_O :: HsMatchContext Name
         -> CtOrigin              -- ^ origin to use if the type needs inst'ing
         -> LPat GhcRn -> ExpSigmaType
         -> TcM a                 -- Checker for body
@@ -138,7 +138,7 @@ data PatEnv
 
 data PatCtxt
   = LamPat   -- Used for lambdas, case etc
-       (HsMatchContext GhcRn)
+       (HsMatchContext Name)
 
   | LetPat   -- Used only for let(rec) pattern bindings
              -- See Note [Typing patterns in pattern bindings]
@@ -365,7 +365,7 @@ tc_pat _ (WildPat _) pat_ty thing_inside
         ; return (WildPat pat_ty, res) }
 
 tc_pat penv (AsPat x (L nm_loc name) pat) pat_ty thing_inside
-  = do  { (wrap, bndr_id) <- setSrcSpan nm_loc (tcPatBndr penv name pat_ty)
+  = do  { (wrap, bndr_id) <- setSrcSpan (locA nm_loc) (tcPatBndr penv name pat_ty)
         ; (pat', res) <- tcExtendIdEnv1 name bndr_id $
                          tc_lpat pat (mkCheckExpType $ idType bndr_id)
                                  penv thing_inside
@@ -589,7 +589,7 @@ tc_pat penv (NPlusKPat _ (L nm_loc name)
             <- tcSyntaxOpGen orig minus [synKnownType pat_ty, SynRho] SynAny $
                \ [lit2_ty, var_ty] ->
                do { lit2' <- newOverloadedLit lit (mkCheckExpType lit2_ty)
-                  ; (wrap, bndr_id) <- setSrcSpan nm_loc $
+                  ; (wrap, bndr_id) <- setSrcSpan (locA nm_loc) $
                                      tcPatBndr penv name (mkCheckExpType var_ty)
                            -- co :: var_ty ~ idType bndr_id
 
@@ -721,7 +721,7 @@ to express the local scope of GADT refinements.
 -- MkT :: forall a b c. (a~[b]) => b -> c -> T a
 --       with scrutinee of type (T ty)
 
-tcConPat :: PatEnv -> Located Name
+tcConPat :: PatEnv -> LocatedA Name
          -> ExpSigmaType           -- Type of the pattern
          -> HsConPatDetails GhcRn -> TcM a
          -> TcM (Pat GhcTcId, a)
@@ -734,7 +734,7 @@ tcConPat penv con_lname@(L _ con_name) pat_ty arg_pats thing_inside
                                              pat_ty arg_pats thing_inside
         }
 
-tcDataConPat :: PatEnv -> Located Name -> DataCon
+tcDataConPat :: PatEnv -> LocatedA Name -> DataCon
              -> ExpSigmaType               -- Type of the pattern
              -> HsConPatDetails GhcRn -> TcM a
              -> TcM (Pat GhcTcId, a)
@@ -753,7 +753,8 @@ tcDataConPat penv (L con_span con_name) data_con pat_ty
         ; pat_ty <- readExpType pat_ty
 
           -- Add the stupid theta
-        ; setSrcSpan con_span $ addDataConStupidTheta data_con ctxt_res_tys
+        ; setSrcSpan (locA con_span) $
+                                     addDataConStupidTheta data_con ctxt_res_tys
 
         ; let all_arg_tys = eqSpecPreds eq_spec ++ theta ++ arg_tys
         ; checkExistentials ex_tvs all_arg_tys penv
@@ -832,7 +833,7 @@ tcDataConPat penv (L con_span con_name) data_con pat_ty
         ; return (mkHsWrapPat wrap res_pat pat_ty, res)
         } }
 
-tcPatSynPat :: PatEnv -> Located Name -> PatSyn
+tcPatSynPat :: PatEnv -> LocatedA Name -> PatSyn
             -> ExpSigmaType                -- Type of the pattern
             -> HsConPatDetails GhcRn -> TcM a
             -> TcM (Pat GhcTcId, a)

@@ -46,6 +46,7 @@ import MkCore
 import DsBinds (dsHsWrapper)
 
 import Id
+import Name
 import ConLike
 import TysWiredIn
 import BasicTypes
@@ -168,7 +169,7 @@ do_premap :: DsCmdEnv -> Type -> Type -> Type ->
 do_premap ids b_ty c_ty d_ty f g
    = do_compose ids b_ty c_ty d_ty (do_arr ids b_ty c_ty f) g
 
-mkFailExpr :: HsMatchContext GhcRn -> Type -> DsM CoreExpr
+mkFailExpr :: HsMatchContext Name -> Type -> DsM CoreExpr
 mkFailExpr ctxt ty
   = mkErrorAppDs pAT_ERROR_ID ty (matchContextErrString ctxt)
 
@@ -595,9 +596,9 @@ dsCmd ids local_vars stack_ty res_ty
     let
         left_id  = HsConLikeOut noExtField (RealDataCon left_con)
         right_id = HsConLikeOut noExtField (RealDataCon right_con)
-        left_expr  ty1 ty2 e = noLoc $ HsApp noExtField
+        left_expr  ty1 ty2 e = noLoc $ HsApp noComments
                            (noLoc $ mkHsWrap (mkWpTyApps [ty1, ty2]) left_id ) e
-        right_expr ty1 ty2 e = noLoc $ HsApp noExtField
+        right_expr ty1 ty2 e = noLoc $ HsApp noComments
                            (noLoc $ mkHsWrap (mkWpTyApps [ty1, ty2]) right_id) e
 
         -- Prefix each tuple with a distinct series of Left's and Right's,
@@ -1126,7 +1127,7 @@ dsCmdStmts _ _ _ [] _ = panic "dsCmdStmts []"
 -- Match a list of expressions against a list of patterns, left-to-right.
 
 matchSimplys :: [CoreExpr]              -- Scrutinees
-             -> HsMatchContext GhcRn    -- Match kind
+             -> HsMatchContext Name     -- Match kind
              -> [LPat GhcTc]            -- Patterns they should match
              -> CoreExpr                -- Return this if they all match
              -> CoreExpr                -- Return this if they don't

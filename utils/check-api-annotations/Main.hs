@@ -24,7 +24,7 @@ testOneFile libdir fileName = do
              case ml_hs_file $ ms_location m of
                Nothing -> False
                Just fn -> fn == fileName
-       ((anns,_cs),p) <- runGhc (Just libdir) $ do
+       ((anns',_cs),p) <- runGhc (Just libdir) $ do
                         dflags <- getSessionDynFlags
                         _ <- setSessionDynFlags dflags
                         addTarget Target { targetId = TargetFile fileName Nothing
@@ -43,7 +43,7 @@ testOneFile libdir fileName = do
        let sspans = Set.fromList $ getAllSrcSpans (pm_parsed_source p)
 
            exploded = [((kw,ss),[anchor])
-                      | ((anchor,kw),sss) <- Map.toList anns,ss <- sss]
+                      | ((anchor,kw),sss) <- Map.toList anns',ss <- sss]
 
            exploded' = Map.toList $ Map.fromListWith (++) exploded
 
@@ -59,7 +59,7 @@ testOneFile libdir fileName = do
              where
                ok v = (k == AnnEofPos) || (srcSpanStart s <= srcSpanStart v)
 
-           precedingProblems = filter comesBefore $ Map.toList anns
+           precedingProblems = filter comesBefore $ Map.toList anns'
 
        putStrLn "---Unattached Annotation Problems (should be empty list)---"
        putStrLn (intercalate "\n" [pp $ Map.fromList $ map fst problems''])
@@ -69,7 +69,7 @@ testOneFile libdir fileName = do
        putStrLn "-- SrcSpan the annotation is attached to, AnnKeywordId,"
        putStrLn "--    list of locations the keyword item appears in"
        -- putStrLn (intercalate "\n" [showAnns anns])
-       putStrLn (showAnns anns)
+       putStrLn (showAnns anns')
        if null problems'' && null precedingProblems
           then exitSuccess
           else exitFailure
@@ -83,7 +83,7 @@ testOneFile libdir fileName = do
 
 
 showAnns :: Map.Map ApiAnnKey [SrcSpan] -> String
-showAnns anns = showAnnsList $ Map.toList anns
+showAnns anns' = showAnnsList $ Map.toList anns'
 
 showAnnsList :: [(ApiAnnKey, [SrcSpan])] -> String
 showAnnsList annsList = "[\n" ++ (intercalate ",\n"
